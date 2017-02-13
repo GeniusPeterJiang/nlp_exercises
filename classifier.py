@@ -1,6 +1,5 @@
 import sklearn
 import numpy
-import random
 import scipy
 
 import sklearn.datasets
@@ -9,7 +8,6 @@ import sklearn.linear_model
 import sklearn.naive_bayes
 import sklearn.metrics
 import sklearn.utils
-import matplotlib.pyplot as plt
 from sklearn.decomposition import TruncatedSVD
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import Normalizer
@@ -31,6 +29,10 @@ def vectorize(train_info, vectorizer):
 def calculate_svd_with_demension(demension):
     def calculate_svd(x_train):
         ur, sigmar, wrt = scipy.sparse.linalg.svds(x_train, k=demension)
+        print ur.shape
+        print sigmar.shape
+        print wrt.shape
+        print ur.dot(sigmar)
         t = x_train.dot(numpy.transpose(wrt))
         return t
     return calculate_svd
@@ -38,13 +40,24 @@ def calculate_svd_with_demension(demension):
 
 def predict_with_classifier_and_feature(train_info, development_info, classifier, vectorizer, reduction=None):
     X_train, y_train = vectorize(train_info, vectorizer)
-    print 'shape of x_train is: ', X_train.shape
     X_dev = vectorizer.transform(development_info.data)
-    print 'shape of x_dev is: ', X_dev.shape
     y_dev = development_info.target
     if reduction:
         X_train = reduction(X_train)
         X_dev = reduction(X_dev)
+
+    _ = classifier.fit(X_train, y_train)
+    pred = classifier.predict(X_dev)
+    output_predict_measurement(y_dev, prediction=pred)
+
+
+def predict_with_classifier_and_feature2(train_info, development_info, classifier, vectorizer):
+    X_train, y_train = vectorize(train_info, vectorizer)
+    X_dev = vectorizer.transform(development_info.data)
+    y_dev = development_info.target
+    svd1 = calculate_svd_with_demension(20)
+    X_train = svd1(X_train)
+    X_dev = svd1(X_dev)
     _ = classifier.fit(X_train, y_train)
     pred = classifier.predict(X_dev)
     output_predict_measurement(y_dev, prediction=pred)
@@ -52,22 +65,17 @@ def predict_with_classifier_and_feature(train_info, development_info, classifier
 
 def compare_feature_extraction(classifier):
     reviews_train_info = sklearn.datasets.load_files('reviews/train')
-    reviews_dev_info = sklearn.datasets.load_files('reviews/test')
-    tf_idf_vectorizer = sklearn.feature_extraction.text.TfidfVectorizer(stop_words='english', max_df=0.8)
-    svd = TruncatedSVD(20)
+    reviews_dev_info = sklearn.datasets.load_files('reviews/dev')
+    tf_idf_vectorizer = sklearn.feature_extraction.text.TfidfVectorizer(stop_words='english')
+    svd = TruncatedSVD(100)
     lsa = make_pipeline(svd, Normalizer(copy=False))
     svd1 = calculate_svd_with_demension(20)
-    predict_with_classifier_and_feature(train_info=reviews_train_info,
-                                        development_info=reviews_dev_info,
-                                        classifier=classifier,
-                                        vectorizer=tf_idf_vectorizer)
 
-    print ' '
-    predict_with_classifier_and_feature(train_info=reviews_train_info,
+    print
+    predict_with_classifier_and_feature2(train_info=reviews_train_info,
                              development_info=reviews_dev_info,
                              classifier=classifier,
-                             vectorizer=tf_idf_vectorizer,
-                            reduction=svd.fit_transform)
+                             vectorizer=tf_idf_vectorizer)
 
 
 def get_feature_set(train_info):
@@ -90,6 +98,6 @@ def data_set_difference():
 
 
 if __name__ == '__main__':
-    sgd_classifier = sklearn.linear_model.SGDClassifier(loss="log", penalty="elasticnet", n_iter=5)
+    sgd_classifier = sklearn.linear_model.SGDClassifier(loss="log", penalty="elasticnet", n_iter=10)
     compare_feature_extraction(sgd_classifier)
     #data_set_difference()

@@ -50,9 +50,7 @@ def synonyms(s, **kwargs) :
 
 # In[6]:
 if __name__ == '__main__':
-    dog = wn.synset('dog.n.01')
-    hyper = lambda s: s.hypernyms()
-    hypo = lambda s: s.hyponyms()
-    print dog.hyponyms()
-    print list(dog.closure(hypo))
-    handbag = wn.synset('bag.n.04')
+    region = wn.synset('region.n.01')
+    print 'hyponyms of region: ', len(region.hyponyms())
+    scholar = wn.synset('scholar.n.01')
+    print 'hyponyms of scholar', len(scholar.hyponyms())
