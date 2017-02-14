@@ -30,7 +30,7 @@ def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
 
 def pmi_estimation_hmm(expt, bigram):
     (t1, w1), (t2, w2) = bigram
-    pmi = expt.cpd_tags[t1].pro(t2) * expt.tag_fd.N() / expt.tag_fd[t2]
+    pmi = expt.cpd_tags[t1].prob(t2) * expt.tag_fd.N() / expt.tag_fd[t2]
     return math.log(pmi, 2)
 
 
@@ -54,8 +54,15 @@ def main():
     prob_tagsequence_2 = calculate_taged_sequence_probability(expt1, ts1)
     print "The probability of the tag sequence ' PRON VERB PRT VERB ' for 'I want to race' is:", prob_tagsequence_2
 
+
 def collocation():
     expt1 = Experiment()
+    expt1.cfd_tagwords = nltk.ConditionalFreqDist(brown_sentence_items())
+    expt1.cpd_tagwords = nltk.ConditionalProbDist(expt1.cfd_tagwords, nltk.MLEProbDist)
+
+    expt1.cfd_tags = nltk.ConditionalFreqDist(
+        nltk.bigrams((tag for (tag, word) in brown_sentence_items())))
+    expt1.cpd_tags = nltk.ConditionalProbDist(expt1.cfd_tags, nltk.MLEProbDist)
     expt1.tag_fd = nltk.FreqDist(tag for (tag, word) in brown_sentence_items())
     expt1.wt_fd = nltk.FreqDist(i for i in brown_sentence_items())
     expt1.bigram_fd = nltk.FreqDist(nltk.bigrams(i for i in brown_sentence_items()))
@@ -63,8 +70,20 @@ def collocation():
     expt1.finder.apply_freq_filter(4)
     expt1.bigram_measures = nltk.collocations.BigramAssocMeasures()
     collocs = expt1.finder.score_ngrams(expt1.bigram_measures.pmi)
-    for ele in collocs[:5]:
-        print ele
+    bigram_list = list()
+    raw_pmi_dict = dict()
+    for ele in collocs:
+        bigram, score = ele
+        pmi_hmm = pmi_estimation_hmm(expt1, bigram)
+        bigram_list.append((bigram, pmi_hmm))
+        raw_pmi_dict[bigram] = score
+
+    for element2 in bigram_list[:10]:
+        print element2
+
+    bigram_list.sort(key=lambda x: x[1])
+    for element in bigram_list[:10]:
+        print element
 
 if __name__ == '__main__':
     collocation()
