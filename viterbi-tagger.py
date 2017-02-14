@@ -1,6 +1,7 @@
 import nltk
 import math
 from nltk.corpus import brown
+from nltk.collocations import *
 
 
 class Experiment(object):
@@ -29,7 +30,7 @@ def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
 
 def pmi_estimation_hmm(expt, bigram):
     (t1, w1), (t2, w2) = bigram
-    pmi = expt.cpd_tagwords[t1].prob(w1) * expt.cpd_tags[t1].pro(t2) * expt.tag_fd[t1] / expt.tag_fd[t2]
+    pmi = expt.cpd_tags[t1].pro(t2) * expt.tag_fd.N() / expt.tag_fd[t2]
     return math.log(pmi, 2)
 
 
@@ -53,6 +54,17 @@ def main():
     prob_tagsequence_2 = calculate_taged_sequence_probability(expt1, ts1)
     print "The probability of the tag sequence ' PRON VERB PRT VERB ' for 'I want to race' is:", prob_tagsequence_2
 
+def collocation():
+    expt1 = Experiment()
+    expt1.tag_fd = nltk.FreqDist(tag for (tag, word) in brown_sentence_items())
+    expt1.wt_fd = nltk.FreqDist(i for i in brown_sentence_items())
+    expt1.bigram_fd = nltk.FreqDist(nltk.bigrams(i for i in brown_sentence_items()))
+    expt1.finder = BigramCollocationFinder(expt1.wt_fd, expt1.bigram_fd)
+    expt1.finder.apply_freq_filter(4)
+    expt1.bigram_measures = nltk.collocations.BigramAssocMeasures()
+    collocs = expt1.finder.score_ngrams(expt1.bigram_measures.pmi)
+    for ele in collocs[:5]:
+        print ele
 
 if __name__ == '__main__':
-    main()
+    collocation()
