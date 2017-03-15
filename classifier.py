@@ -1,30 +1,42 @@
 #!/usr/bin/env python
 # -*- coding: UTF-8 -*-
 
-import sklearn
+import re
+
+import classifier_patterns
 import numpy
 import scipy
-import re
+import sklearn
 import sklearn.datasets
 import sklearn.feature_extraction.text
 import sklearn.linear_model
-import sklearn.naive_bayes
 import sklearn.metrics
+import sklearn.naive_bayes
 import sklearn.utils
-import newsreader
-import vocabulary
-import dataloader
-import classifier_patterns
-from sklearn.decomposition import TruncatedSVD
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import Normalizer
-from sklearn.decomposition import LatentDirichletAllocation
 from scipy.spatial import distance
+from sklearn.decomposition import LatentDirichletAllocation
 
+import dataloader
+import newsreader
 
 pattern = re.compile(r"[^\x00-\x7F]+")
 vocab_file, vocab_file_type = "vocab_pc_mac.pkl", "pickle"
-embedding_file, embedding_dimensions, embedding_cache = "/Users/zxj/Downloads/glove.6B.50d.txt", 50, "embedding_mac_ibm.npz"
+embedding_file, embedding_dimensions, embedding_cache = "/Users/zxj/Downloads/glove.6B.50d.txt", 50, "embedding_mideast_guns.npz"
+
+guns = "talk.politics.guns"
+mideast = "talk.politics.mideast"
+pc = "comp.sys.ibm.pc.hardware"
+mac = "comp.sys.mac.hardware"
+graphic = "comp.graphics"
+auto = "rec.autos"
+
+embedding_cache_pc_mac = "embedding_mac_ibm.npz"
+embedding_cache_guns = "embedding_mideast_guns.npz"
+embedding_cache_auto = "embedding_graphic_auto.npz"
+
+option_list = [(guns, mideast, embedding_cache_guns),
+                   (pc, mac, embedding_cache_pc_mac),
+                   (graphic, auto, embedding_cache_auto)]
 
 
 def print_top_words(model, feature_names, n_top_words):
@@ -51,6 +63,19 @@ def calculate_svd_with_demension(demension):
         t = x_train.dot(numpy.transpose(wrt))
         return t
     return calculate_svd
+
+
+def pair_wise_similarity(expt):
+    # this was too long to write out over and over
+    # plus you want to be sure to have the same distance across the board
+    # DRY!
+    d = lambda *args: sklearn.metrics.pairwise.pairwise_distances(*args, metric='cosine')
+
+    Xyes = expt.train_X[expt.train_y ==1, :]
+    Xno = expt.train_X[expt.train_y != 1, :]
+    one_minus = lambda a:  1-a
+    vec_fuc = numpy.vectorize(one_minus)
+    return vec_fuc(d(Xyes, Xno))
 
 
 def predict_with_classifier_and_feature(train_info, development_info, classifier, vectorizer, reduction=None):
@@ -169,21 +194,28 @@ def stack_embeddings(embeddings):
     return operation
 
 
-def initial_experiment(data_loader):
-    sgd_classifier = sklearn.linear_model.SGDClassifier(loss="log",
-                                                    penalty="elasticnet",
-                                                    n_iter=5)
-    expt1 = classifier_patterns.Experiment(data_loader, sgd_classifier)
+def document_embeddings(embeddings):
+    def operation(X, y):
+        extra_features = X.shape[1] - embeddings.shape[0]
+        if extra_features > 0 :
+            Z = scipy.sparse.csr_matrix((extra_features, embeddings.shape[1]))
+            W = scipy.sparse.vstack([embeddings, Z])
+        else:
+            W = embeddings
+        return X.dot(W), y
+    return operation
+
+
+def initial_experiment(data_loader, clssifier):
+    expt1 = classifier_patterns.Experiment(data_loader, clssifier)
     expt1.initialize()
     return expt1
 
 
-def add_embedding_feature(previous_expt, embeding):
+def add_embedding_feature(previous_expt, embeding, clssifier):
     expt_new = classifier_patterns.Experiment.transform(previous_expt,
-                                                 stack_embeddings(embeding),
-                                                 sklearn.linear_model.SGDClassifier(loss="log",
-                                                                                    penalty="elasticnet",
-                                                                                    n_iter=10))
+                                                        stack_embeddings(embeding),
+                                                        clssifier)
     expt_new.initialize()
     return expt_new
 
@@ -192,18 +224,21 @@ def fit_and_show_result(experiment):
     experiment.fit_and_validate()
     output_predict_measurement(experiment.dev_y, experiment.dev_predictions)
     print "centroid similarity  of group 1 is: {0}".format(centroid_distance(experiment))
+    print "mean of pairwise similarity  of group 1 is: {0}".format(pair_wise_similarity(experiment).mean())
+    print "max of pairwise similarity  of group 1 is: {0}".format(pair_wise_similarity(experiment).max())
+    print "min of pairwise similarity  of group 1 is: {0}".format(pair_wise_similarity(experiment).min())
     print "----------------"
 
 if __name__ == '__main__':
     tf_idf_vectorizer = sklearn.feature_extraction.text.TfidfVectorizer(
         stop_words='english', max_df=0.95, min_df=2)
     binary_vectorizer = sklearn.feature_extraction.text.CountVectorizer(
-        stop_words='english', max_df=0.95, min_df=2, binary=True)
-
+        stop_words='english', max_df=0.95, min_df=2, binary=True, ngram_range=[1, 1])
+    sgd = sklearn.linear_model.SGDClassifier(loss="log", penalty="elasticnet", n_iter=10)
     train_path = "/Users/zxj/Downloads/20news-bydate/20news-bydate-train/"
     test_path = "/Users/zxj/Downloads/20news-bydate/20news-bydate-test"
-    first_category = "comp.sys.ibm.pc.hardware"
-    second_category = "comp.sys.mac.hardware"
+
+    (first_category, second_category, embedding_cache) = option_list[1]
 
     '''
     svd = TruncatedSVD(200)
@@ -213,13 +248,38 @@ if __name__ == '__main__':
                                    test_dir=test_path, train_dir_pos=first_category,
                                    train_dir_neg=second_category,
                                    test_dir_pos=first_category, test_dir_neg=second_category,
+                                   vectorizer=binary_vectorizer,
+                                   )
+
+    loader2 = dataloader.DataLoader(train_dir=train_path,
+                                   test_dir=test_path, train_dir_pos=first_category,
+                                   train_dir_neg=second_category,
+                                   test_dir_pos=first_category, test_dir_neg=second_category,
                                    vectorizer=tf_idf_vectorizer,
                                    )
     loader.initialize()
-    v = vocabulary.Vocabulary.from_iterable(loader.features,
-                                            file_type=vocab_file_type)
+    loader2.initialize()
+
     embedding_matrix = newsreader.load_sparse_csr(embedding_cache)
-    first_experiemnt = initial_experiment(loader)
+
+    first_experiemnt = initial_experiment(loader, sgd)
+    expt1 = add_embedding_feature(first_experiemnt, embedding_matrix, sgd)
+    second_experiment = classifier_patterns.Experiment.transform(first_experiemnt,
+                                                                 reweight_features(first_experiemnt),
+                                                                 sgd)
+    print 'binary feature'
     fit_and_show_result(first_experiemnt)
-    expt2 = add_embedding_feature(first_experiemnt, embedding_matrix)
+    fit_and_show_result(expt1)
+
+    print 'log count ratio '
+    fit_and_show_result(second_experiment)
+
+    expt2 = add_embedding_feature(second_experiment, embedding_matrix, sgd)
     fit_and_show_result(expt2)
+
+    third_experiemnt = initial_experiment(loader2, sgd)
+    print 'tf-idf'
+    fit_and_show_result(third_experiemnt)
+
+    expt4 = add_embedding_feature(third_experiemnt, embedding_matrix, sgd)
+    fit_and_show_result(expt4)

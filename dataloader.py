@@ -1,7 +1,9 @@
-import newsreader
-import classifier
-import scipy
 import numpy
+import scipy
+
+import classifier
+from assignment1 import newsreader
+
 
 class DataLoader(object) :
     '''Class for managing the mapping from newsgroup-style classification
