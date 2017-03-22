@@ -2,30 +2,30 @@
 
 from xml.etree.ElementTree import parse
 from xml.etree.ElementTree import Element
-import tagtools
 import re
 import nltk
 import sys
 import crfutils
 import argparse
 import pycrfsuite
+import tagtools
+import sequence_tagging_patterns
 
 parser = argparse.ArgumentParser(description='Process some integers.')
+punct_pattern = re.compile(r'[\\.,:]+$')
 
 
 def parse_dom(path, child_name):
     dom_tree = parse(path)
     root = dom_tree.getroot()
     '''type : Element'''
-    entry_list = list()
-
+    result_list = list()
     for ele in root.iter(tag=child_name):
         ''':type : Element'''
         for index in xrange(len(ele)):
             attrib_map = {'tag': ele[index].tag, 'word': ele[index].text, 'F': []}
-            entry_list.append(attrib_map)
-
-    return entry_list
+            result_list.append(map_to_list(attrib_map))
+    return result_list
 
 
 def contains_upper(token):
@@ -56,29 +56,75 @@ def contains_digit(token):
     return b
 
 
+def get_shape(token):
+    r = ''
+    for c in token:
+        if c.isupper():
+            r += 'U'
+        elif c.islower():
+            r += 'L'
+        elif c.isdigit():
+            r += 'D'
+        elif c in ('.', ','):
+            r += '.'
+        elif c in (';', ':', '?', '!'):
+            r += ';'
+        elif c in ('+', '-', '*', '/', '=', '|', '_'):
+            r += '-'
+        elif c in ('(', '{', '[', '<'):
+            r += '('
+        elif c in (')', '}', ']', '>'):
+            r += ')'
+        else:
+            r += c
+    return r
+
+
+def map_to_list(input_map, tokenize=nltk.word_tokenize):
+    word = input_map['word']
+    word = punct_pattern.sub('', word.strip())
+    words = tokenize(word)
+    words_and_pos = nltk.pos_tag(words)
+    return [{'word': ele, 'tag': input_map['tag'], 'F': [], 'pos': pos_info} for ele, pos_info in words_and_pos]
+
+
 def binary(v):
     return 'yes' if v else 'no'
 
-U = ['word', 'cu', 'cl', 'ca', 'cd']
-B = ['word']
+
+def feature_to_boolean(assert_function):
+    def bool_string(word):
+        return 'yes' if assert_function(word) else 'no'
+    return bool_string
+
+U = ['word', 'cu', 'cl', 'ca', 'cd', 'shape', 'pos', 'cy', 'booktitle', 'journal', 'page',
+     'institution', 'tech']
+B = ['word', 'shape', 'pos']
 templates = []
+
+uni_gram_map = {'cu': feature_to_boolean(contains_lower),
+                'cl': feature_to_boolean(contains_upper),
+                'ca': feature_to_boolean(contains_alpha),
+                'cd': feature_to_boolean(contains_digit),
+                'shape': get_shape,
+                'cy': feature_to_boolean(sequence_tagging_patterns.contains_year),
+                'booktitle': feature_to_boolean(sequence_tagging_patterns.probable_book_title),
+                'journal': feature_to_boolean(sequence_tagging_patterns.probable_journal),
+                'page': feature_to_boolean(sequence_tagging_patterns.probable_page),
+                'institution': feature_to_boolean(sequence_tagging_patterns.probable_institution),
+                'tech': feature_to_boolean(sequence_tagging_patterns.probable_tech)
+                }
+
 
 for name in U:
     templates += [((name, i),) for i in range(-1, 2)]
 for name in B:
-    templates += [((name, i), (name, i+1)) for i in range(-2, 2)]
+    templates += [((name, i), (name, i+1)) for i in range(-2, 1)]
 
 
 def observation(v, defval=''):
-    # Contains a uppercase letter.
-    v['cu'] = binary(contains_upper(v['word']))
-    # Contains a lowercase letter.
-    v['cl'] = binary(contains_lower(v['word']))
-    # Contains a alphabet letter.
-    v['ca'] = binary(contains_alpha(v['word']))
-    # Contains a digit.
-    v['cd'] = binary(contains_digit(v['word']))
-    # Contains a symbol.
+    for key, uni_function in uni_gram_map.iteritems():
+        v[key] = uni_function(v['word'])
 
 
 def feature_extractor(X):
@@ -92,9 +138,10 @@ def feature_extractor(X):
 
 def generate_features(path, entry_name):
     entries = parse_dom(path, entry_name)
-    for ele in entries:
-        observation(ele)
-    feature_extractor(entries)
+    for entry_list in entries:
+        for entry in entry_list:
+            observation(entry)
+        feature_extractor(entry_list)
     return entries
 
 
@@ -107,22 +154,14 @@ def featute_list_to_map(feature_list):
     return feature_map
 
 
-def train_and_test():
-    path = '/Users/zxj/Downloads/data_set/reference_train.xml'
-    test_path = '/Users/zxj/Downloads/data_set/reference_test.xml'
-    train_entries = generate_features(path, 'entry')
-    test_entries = generate_features(test_path, 'entry')
-    x_train = [ele['F'] for ele in train_entries]
-    y_train = [ele['tag'] for ele in train_entries]
-    x_test = [ele['F'] for ele in test_entries]
-
-
 def train_model(train_path, output_path, entry_name):
     train_entries = generate_features(train_path, entry_name)
-    x_train = [ele['F'] for ele in train_entries]
-    y_train = [ele[entry_name] for ele in train_entries]
+    x_train = [[ele['F'] for ele in train_entry] for train_entry in train_entries]
+    y_train = [[ele['tag'] for ele in train_entry] for train_entry in train_entries]
     trainer = pycrfsuite.Trainer(verbose=False)
-    trainer.append(x_train, y_train)
+    for xseq, yseq in zip(x_train, y_train):
+        trainer.append(xseq, yseq)
+    
     trainer.set_params({
         'c1': 1.0,  # coefficient for L1 penalty
         'c2': 1e-3,  # coefficient for L2 penalty
@@ -138,11 +177,11 @@ def predict(test_path, model_path, entry_name):
     tagger = pycrfsuite.Tagger()
     tagger.open(model_path)
     test_entries = generate_features(test_path, entry_name)
-    x_test = [ele['F'] for ele in test_entries]
-    predict_list = [tagger.tag(ele) for ele in x_test]
-    correct_list = [ele[entry_name] for ele in test_entries]
-    print("Predicted:", ' '.join(predict_list))
-    print("Correct:  ", ' '.join(correct_list))
+    x_test = [[ele['F'] for ele in train_entry] for train_entry in test_entries]
+    correct_list = [ele['tag'] for train_entry in test_entries for ele in train_entry]
+    predict_list = [tagger.tag(entry_list) for entry_list in x_test]
+    predict_list = [item for sublist in predict_list for item in sublist]
+    print tagtools.bieso_classification_report(correct_list, predict_list)
 
 
 def chunking():
@@ -158,5 +197,12 @@ def chunking():
     except IOError as io_err:
         print 'Failed to open file {0}'.format(io_err.message)
 
+def train_and_predict():
+    train_path = '/Users/zxj/Downloads/data_set/reference_train.xml'
+    model_path = './reference_all_features.model'
+    test_path = '/Users/zxj/Downloads/data_set/reference_test.xml'
+    train_model(train_path, model_path, 'entry')
+    predict(test_path, model_path, 'entry')
+
 if __name__ == '__main__':
-    chunking()
+    train_and_predict()
