@@ -396,16 +396,15 @@ class TaggingExperiment(object) :
         return np.concatenate(results)
 
 
-    def visualize_decoder(self, item) :
+    def visualize_decoder(self, item, index_list, actual, predictions) :
         'show the results of running the classifier and decoder on text number item_number'
         if not self.decoded :
             self.decode_and_validate()
         w = self.data.dev_item_token_views(item)
-        s = self.dev_d[item]
-        e = self.dev_d[item+1]
-        tagtools.visualize(w, {'actual': self.dev_y[s:e], 
-                               'best': self.dev_predictions[s:e],
-                               'predicted': self.dev_decoded[s:e]})
+        s = index_list[item]
+        e = index_list[item+1]
+        tagtools.visualize(w, {'actual': actual[s:e],
+                               'predicted': predictions[s:e]})
 
     @classmethod
     def transform(cls, expt, operation, classifier) :
@@ -470,39 +469,51 @@ def status_whats_seen(status, t1, t2):
 
 
 def next_status_ref(status, t1, t2):
-    exclusive_set = {'title', 'author', 'date'}
+    unique_set = {'title', 'date', 'author'}
+    exclusive_set = {'booktitle', 'journal', 'tech'}
+    if 'note' not in status:
+        unique_set = unique_set.union(exclusive_set)
+
     field = t2[3:]
-    model_failure_set = {'booktitle'}
 
     if is_start_or_single(t2) and field in status:
-        print field
-        if field in exclusive_set:
+        if field in unique_set:
             return None
-
-
+        if field in exclusive_set:
+            exclusive_set.discard(field)
+            if not exclusive_set.isdisjoint(status):
+                return None
+            
     return status.union([field])
 
 
 # enforce model constraints all the time.  you can do better.
-def dont_do_special(status, t1, j, node, heuristics):
+def dont_do_special(status, t1, j, node, heuristics, punishment):
     return []
 
 
-def do_special_ref(status, t1, j, node, heuristics):
-    if not exists_model_failure(status, t1):
+def do_special_ref(status, t1, j, node, heuristics, punishment):
+    end_set = {'author', 'title'}
+    publication_set = {'booktitle', 'journal', 'tech'}
+
+    if publication_set.isdisjoint(status) or not end_set.issubset(status):
         return []
-    if j > len(heuristics) - 2:
+
+    if not end_set.issubset(status):
         return []
 
-    first_list = []
-    for index in xrange(j, len(heuristics) - 1):
-        new_node = (None, node)
-        first_list.append((new_node, heuristics[index + 1] * 2))
-    return first_list
+    length_limit = len(heuristics) - 2
 
+    if j > length_limit :
+        return []
 
-def exists_model_failure(status_set, tag):
-    return tag not in status_set
+    new_node = node
+    for index in xrange(j, len(heuristics) - 2):
+        new_node = (None, new_node)
+
+    score = heuristics[j + 1] + punishment
+    return [(new_node, score)]
+
 
 def compare_predict_and_actual(predict, actual):
     compare = zip(predict, actual)
@@ -524,7 +535,7 @@ def create_bib(data, features, next_status, do_special):
     bib_decoder = tagtools.BeamDecoder(initial_status,
                                     modified_consistent,
                                    next_status,
-                                   dont_do_special)
+                                   do_special)
 
     bib = TaggingExperiment(data,
                             features,
@@ -537,6 +548,6 @@ def create_bib(data, features, next_status, do_special):
 if __name__ == '__main__':
     bib_data, bib_features = create_bib_data()
     bib = create_bib(bib_data, bib_features, next_status_ref, do_special_ref)
-    bib.decode_and_validate()
-    # decoded_test = bib.decode_and_validate2(bib.test_X, bib.test_d, bib.test_y)
-    print tagtools.bieso_classification_report(bib.dev_y, bib.dev_decoded)
+    #bib.decode_and_validate()
+    decoded_test = bib.decode_and_validate2(bib.test_X, bib.test_d, bib.test_y)
+    print tagtools.bieso_classification_report(bib.test_y, decoded_test)

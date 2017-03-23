@@ -197,6 +197,7 @@ def chunking():
     except IOError as io_err:
         print 'Failed to open file {0}'.format(io_err.message)
 
+
 def train_and_predict():
     train_path = '/Users/zxj/Downloads/data_set/reference_train.xml'
     model_path = './reference_all_features.model'
