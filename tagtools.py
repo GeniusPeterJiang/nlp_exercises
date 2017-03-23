@@ -535,7 +535,7 @@ class BeamDecoder(object) :
                         cost = entry.cost - log_predictions[j + 1][i]
                         qadd(j + 1, t2, ns, entry.node, cost)
 
-                    punishment = -log_predictions[j + 1].mean() + 1.0
+                    punishment = -log_predictions[j + 1].mean() - 2.5
 
                     specials = self.do_special(status, t1, j + 1, entry.node, heuristics, punishment)
                     for node, score in specials:

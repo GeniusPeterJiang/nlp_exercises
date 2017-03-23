@@ -29,18 +29,12 @@ reference_test_file = "/Users/zxj/Downloads/data_set/reference_test.xml"
 reference_dev_file = "/Users/zxj/Downloads/data_set/reference_dev.xml"
 reference_xml_item_keyword = "entry"
 
-ingredients_train_file = "/Users/zxj/Downloads/data_set/ingredients_small_train.xml"
-ingredients_dev_file = "/Users/zxj/Downloads/data_set/ingredients_devset.xml"
-ingredients_test_file = "/Users/zxj/Downloads/data_set/ingredients_small_test.xml"
-#  "ingredients_big_train.xml", "ingredients_big_test.xml", "ingredients_devset.xml"
-ingredients_xml_item_keyword = "ingredient"
-
 constrains_map = {'b': 'ie', 's': 'bs', 'i': 'ie', 'e': 'bs'}
 month_set = {'january', 'february', 'march', 'april',
              'may', 'june', 'july', 'august', 'aug',
              'september', 'october', 'november', 'december'}
 year_pattern = re.compile(r'^\(|19\d{2}|\)$')
-page_pattern = re.compile(r'pages|pp|^\d{1,4}-\d{1,4}$')
+page_pattern = re.compile(r'pages|pp|^\d{2,4}-\d{2,4}$')
 volume_prefixes = {'Vol', 'No'}
 
 conference_set = {'Conf', 'Conference', 'National', 'International', 'Symposium', 'Proc', 'Proceedings'}
@@ -172,6 +166,19 @@ def all_digits(item, code):
         return u"{}: is all digits".format(code)
 
 
+def single_digit(input_str):
+    return input_str.isdigit() and len(input_str) == 1
+
+
+def double_digit(input_str):
+    return input_str.isdigit() and len(input_str) == 2
+
+
+def multidigit(input_str):
+    return input_str.isdigit() and len(input_str) >= 3
+
+
+
 def lonely_initial(item, code) :
     if len(item) == 2 and item[0].isupper and item[1] == '.' :
         return u"{}: lonely initial".format(code)
@@ -250,14 +257,17 @@ default_token_view = lambda i : i[0]
 
 default_feature_processor = make_cxt_feature_processor(
     [all_digits, lonely_initial,
-     identity_feature, feature_formatter(is_month, u'{0} is month'),
-     feature_formatter(contains_year, u'{0} contains year'),
-     feature_formatter(contains_volume_prefixes, u'{0} contains volume prefixes'),
-     feature_formatter(probable_page, u'{0} is probable a page'),
-     feature_formatter(probable_book_title, u'{0} is a book title'),
-     feature_formatter(probable_journal, u'{0} is a journal'),
-     feature_formatter(probable_tech, u'{0} is a tech'),
-     feature_formatter(probable_institution, u'{0} is an instituiton')
+     identity_feature, feature_formatter(is_month, u'{0}: is month'),
+     feature_formatter(contains_year, u'{0}: contains year'),
+     feature_formatter(contains_volume_prefixes, u'{0}: contains volume prefixes'),
+     feature_formatter(probable_page, u'{0}: is probable a page'),
+     feature_formatter(probable_book_title, u'{0}: is a book title'),
+     feature_formatter(probable_journal, u'{0}: is a journal'),
+     feature_formatter(probable_tech, u'{0}: is a tech'),
+     feature_formatter(probable_institution, u'{0}: is an institution'),
+     feature_formatter(single_digit, u'{0}: is a  digit with length 1'),
+     feature_formatter(double_digit, u'{0}: is a digit with length 2'),
+     feature_formatter(multidigit, u'{0}: is a digit with length larger than 3')
      ], [is_empty])
 
 
@@ -279,19 +289,6 @@ def create_bib_data():
                                     default_feature_processor)
     bib_data.initialize()
     return bib_data, bib_features
-
-
-def create_recipe_data():
-    recipe_features = vocabulary.Vocabulary()
-    recipe_data = tagtools.DataManager(ingredients_train_file,
-                                   ingredients_test_file,
-                                   ingredients_dev_file,
-                                   ingredients_xml_item_keyword,
-                                   default_tokenizer,
-                                   default_token_view,
-                                   default_features(recipe_features),
-                                   default_feature_processor)
-    recipe_data.initialize()
 
 
 def is_start_or_single(input_str):
@@ -504,7 +501,7 @@ def do_special_ref(status, t1, j, node, heuristics, punishment):
 
     length_limit = len(heuristics) - 2
 
-    if j > length_limit :
+    if j > length_limit:
         return []
 
     new_node = node
@@ -533,9 +530,9 @@ def create_bib(data, features, next_status, do_special):
                                            n_iter=5)
 
     bib_decoder = tagtools.BeamDecoder(initial_status,
-                                    modified_consistent,
-                                   next_status,
-                                   do_special)
+                                       modified_consistent,
+                                       next_status,
+                                       do_special)
 
     bib = TaggingExperiment(data,
                             features,
@@ -549,5 +546,6 @@ if __name__ == '__main__':
     bib_data, bib_features = create_bib_data()
     bib = create_bib(bib_data, bib_features, next_status_ref, do_special_ref)
     #bib.decode_and_validate()
+
     decoded_test = bib.decode_and_validate2(bib.test_X, bib.test_d, bib.test_y)
     print tagtools.bieso_classification_report(bib.test_y, decoded_test)
